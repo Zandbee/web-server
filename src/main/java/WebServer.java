@@ -1,5 +1,8 @@
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.ServerSocket;
+import java.util.Properties;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -8,13 +11,12 @@ import java.util.logging.Logger;
  */
 public class WebServer {
     private static final Logger logger = Logger.getLogger(WebServer.class.getName());
+    private static final String PROPERTIES_FILE = "config.properties";
+    private static final int DEFAULT_PORT = 4444;
 
     public static void main(String[] args) {
-        // TODO: read port from args
-        int portNumber = 4444;
-
         logger.info("Starting a server");
-        listen(portNumber);
+        listen(getPort());
     }
 
     private static void listen(int portNumber) {
@@ -25,5 +27,20 @@ public class WebServer {
         } catch (IOException e) {
             logger.log(Level.SEVERE, "Cannot listen on port " + portNumber, e);
         }
+    }
+
+    private static int getPort() {
+        Properties properties = new Properties();
+        int port = DEFAULT_PORT;
+        //WebServer.class.getResourceAsStream()
+        try (FileInputStream in = new FileInputStream(PROPERTIES_FILE)) {
+            properties.load(in);
+            port = Integer.parseInt(properties.getProperty("port", Integer.toString(DEFAULT_PORT)));
+        } catch (FileNotFoundException e) {
+            logger.log(Level.SEVERE, "Properties file not found: " + PROPERTIES_FILE, e);
+        } catch (IOException e) {
+            logger.log(Level.SEVERE, "Error processing " + PROPERTIES_FILE, e);
+        }
+        return port;
     }
 }
