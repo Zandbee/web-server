@@ -1,6 +1,5 @@
 import java.io.*;
-import java.net.Socket;
-import java.net.URI;
+import java.net.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
@@ -29,8 +28,7 @@ public class WebServerThread extends Thread {
     private Socket socket;
     private String host; // files are stored here
     private int sessionInterval;
-    private long sessionStartTime;
-    private long currentTime;
+
 
     public WebServerThread(Socket socket, String host, int sessionInterval) {
         //super("WebServerThread"); TODO
@@ -38,38 +36,25 @@ public class WebServerThread extends Thread {
         this.socket = socket;
         this.host = host;
         this.sessionInterval = sessionInterval;
-        this.sessionStartTime = System.currentTimeMillis();
     }
 
     @Override
     public void run() {
         try (BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream(), UTF_8));
              BufferedWriter bw = new BufferedWriter(new PrintWriter(socket.getOutputStream(), true))) {
-            String requestLine;
 
-            // check if a session has not ended yet
-                /*long curTime = System.currentTimeMillis();
-                int sessionTime = (int) (curTime - sessionStartTime);
-                System.out.println("Start time: " + sessionStartTime);
-                System.out.println("Current time: " + curTime);
-                System.out.println("Session time: " + sessionTime);
-                if (sessionTime > sessionInterval) {
-                    // session timeout
-                    respondForbidden(out);
-                    return;
-                }*/
-
-            requestLine = in.readLine();
+            String requestLine = in.readLine();
             if (requestLine != null && requestLine.startsWith(REQUEST_GET)) {
                 int pathStart = requestLine.indexOf(" ") + 1;
                 int pathFinish = requestLine.indexOf(" ", pathStart);
                 String path = requestLine.substring(pathStart, pathFinish);
                 System.out.println("Requested path: " + path);
 
+                setCookieUsingCookieHandler();
                 respond(bw, path);
             }
 
-            System.out.println("Null in request line");
+            //socket.close();
         } catch (IOException e) {
             logger.log(Level.SEVERE, "Error reading from or writing to the socket", e);
         }
@@ -147,6 +132,27 @@ public class WebServerThread extends Thread {
             }
         } catch (FileNotFoundException e) {
             logger.log(Level.SEVERE, "Cannot find " + fileUri.getPath(), e);
+        }
+    }
+
+    private void setCookieUsingCookieHandler() {
+        try {
+            // instantiate CookieManager
+            CookieManager manager = new CookieManager();
+            CookieHandler.setDefault(manager);
+            CookieStore cookieJar =  manager.getCookieStore();
+
+            // create cookie
+            HttpCookie cookie = new HttpCookie("UserName", "John Doe");
+
+            // add cookie to CookieStore for a
+            // particular URL
+            URL url = new URL("http://localhost:4444");
+            cookieJar.add(url.toURI(), cookie);
+            System.out.println("Added cookie using cookie handler");
+        } catch(Exception e) {
+            System.out.println("Unable to set cookie using CookieHandler");
+            e.printStackTrace();
         }
     }
 }
