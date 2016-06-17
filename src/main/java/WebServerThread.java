@@ -5,6 +5,8 @@ import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -18,6 +20,8 @@ public class WebServerThread extends Thread {
 
     private static final String HEADER_DATE = "Date: ";
     private static final String HEADER_SERVER = "Server: ";
+    private static final String HEADER_SET_COOKIE = "Set-Cookie: ";
+    private static final String COOKIE_SESSION_ID = "SESSID=";
 
     private static final String URI_SCHEME_FILE = "file:///";
     private static final String HTML_INDEX = "/index.html";
@@ -28,7 +32,7 @@ public class WebServerThread extends Thread {
     private Socket socket;
     private String host; // files are stored here
     private int sessionInterval;
-
+    private ConcurrentHashMap<String, String> sessionIdMap = new ConcurrentHashMap<>();
 
     public WebServerThread(Socket socket, String host, int sessionInterval) {
         //super("WebServerThread"); TODO
@@ -50,7 +54,6 @@ public class WebServerThread extends Thread {
                 String path = requestLine.substring(pathStart, pathFinish);
                 System.out.println("Requested path: " + path);
 
-                setCookieUsingCookieHandler();
                 respond(bw, path);
             }
 
@@ -82,7 +85,7 @@ public class WebServerThread extends Thread {
     private void respondFileNotFound(BufferedWriter bw) throws IOException {
         System.out.println("RESPONDING - File not found");
         bw.write("HTTP/1.1 404 File not found");
-        bw.newLine(); // empty line after status line
+        bw.newLine();
 
         writeResponseHeaders(bw);
 
@@ -92,7 +95,7 @@ public class WebServerThread extends Thread {
     private void respondOk(BufferedWriter bw, URI fileUri) throws IOException {
         System.out.println("RESPONDING");
         bw.write("HTTP/1.1 200 OK");
-        bw.newLine(); // empty line after status line
+        bw.newLine();
 
         writeResponseHeaders(bw);
 
@@ -102,7 +105,7 @@ public class WebServerThread extends Thread {
     private void respondForbidden(BufferedWriter bw) throws IOException {
         System.out.println("RESPONDING - Forbidden/Session expired");
         bw.write("HTTP/1.1 403 Forbidden");
-        bw.newLine(); // empty line after status line
+        bw.newLine();
 
         writeResponseHeaders(bw);
 
@@ -120,6 +123,9 @@ public class WebServerThread extends Thread {
         bw.write(HEADER_DATE + httpDateFormat.format(new Date()));
         bw.newLine();
 
+        bw.write(HEADER_SET_COOKIE + COOKIE_SESSION_ID + generateSessionId());
+        bw.newLine();
+
         bw.newLine(); // empty line after headers
     }
 
@@ -130,29 +136,13 @@ public class WebServerThread extends Thread {
                 bw.write(fileLine);
                 bw.newLine();
             }
+            bw.newLine(); // TODO: why need this line
         } catch (FileNotFoundException e) {
             logger.log(Level.SEVERE, "Cannot find " + fileUri.getPath(), e);
         }
     }
 
-    private void setCookieUsingCookieHandler() {
-        try {
-            // instantiate CookieManager
-            CookieManager manager = new CookieManager();
-            CookieHandler.setDefault(manager);
-            CookieStore cookieJar =  manager.getCookieStore();
-
-            // create cookie
-            HttpCookie cookie = new HttpCookie("UserName", "John Doe");
-
-            // add cookie to CookieStore for a
-            // particular URL
-            URL url = new URL("http://localhost:4444");
-            cookieJar.add(url.toURI(), cookie);
-            System.out.println("Added cookie using cookie handler");
-        } catch(Exception e) {
-            System.out.println("Unable to set cookie using CookieHandler");
-            e.printStackTrace();
-        }
+    private static String generateSessionId() {
+        return UUID.randomUUID().toString();
     }
 }
