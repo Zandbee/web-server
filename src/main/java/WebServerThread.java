@@ -22,7 +22,8 @@ public class WebServerThread extends Thread {
 
     private static final String URI_SCHEME_FILE = "file:///";
     private static final String HTML_INDEX = "/index.html";
-    private static final String HTML_FORBIDDEN = "/index.html";
+    private static final String HTML_FORBIDDEN = "/forbidden.html";
+    private static final String HTML_NOT_FOUND = "/notfound.html";
     private static final String SERVER_NAME = "noname.server.ru";
 
     private Socket socket;
@@ -43,11 +44,10 @@ public class WebServerThread extends Thread {
     @Override
     public void run() {
         try (BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream(), UTF_8));
-             OutputStream out = socket.getOutputStream()) {
+             BufferedWriter bw = new BufferedWriter(new PrintWriter(socket.getOutputStream(), true))) {
             String requestLine;
 
-            while ((requestLine = in.readLine()) != null) {
-                // check if a session has not ended yet
+            // check if a session has not ended yet
                 /*long curTime = System.currentTimeMillis();
                 int sessionTime = (int) (curTime - sessionStartTime);
                 System.out.println("Start time: " + sessionStartTime);
@@ -59,95 +59,69 @@ public class WebServerThread extends Thread {
                     return;
                 }*/
 
-                if (requestLine.startsWith(REQUEST_GET)) {
-                    int pathStart = requestLine.indexOf(" ") + 1;
-                    int pathFinish = requestLine.indexOf(" ", pathStart);
-                    String path = requestLine.substring(pathStart, pathFinish);
-                    System.out.println("Requested path: " + path);
+            requestLine = in.readLine();
+            if (requestLine != null && requestLine.startsWith(REQUEST_GET)) {
+                int pathStart = requestLine.indexOf(" ") + 1;
+                int pathFinish = requestLine.indexOf(" ", pathStart);
+                String path = requestLine.substring(pathStart, pathFinish);
+                System.out.println("Requested path: " + path);
 
-                    respond(out, path);
-                }
+                respond(bw, path);
             }
+
             System.out.println("Null in request line");
         } catch (IOException e) {
             logger.log(Level.SEVERE, "Error reading from or writing to the socket", e);
         }
     }
 
-    private void respond(OutputStream out, String path) {
+    private void respond(BufferedWriter bw, String path) throws IOException {
         switch (path) {
             case "/":
                 // return index.html
-                respondOk(out, URI.create(URI_SCHEME_FILE + host + HTML_INDEX));
+                respondOk(bw, URI.create(URI_SCHEME_FILE + host + HTML_INDEX));
                 break;
             default:
                 // return requested file
                 URI fileUri = URI.create(URI_SCHEME_FILE + host + path);
                 System.out.println("File URI: " + fileUri);
                 if (Files.exists(Paths.get(fileUri))) {
-                    respondOk(out, fileUri);
+                    respondOk(bw, fileUri);
                 } else {
-                    respondFileNotFound(out);
+                    respondFileNotFound(bw);
                 }
                 break;
         }
     }
 
-    private void respondFileNotFound(OutputStream out) {
-        try (BufferedWriter bw = new BufferedWriter(new PrintWriter(out))) {
-            System.out.println("RESPONDING - File not found");
-            bw.write("HTTP/1.1 404 File not found");
-            bw.newLine(); // empty line after status line
+    private void respondFileNotFound(BufferedWriter bw) throws IOException {
+        System.out.println("RESPONDING - File not found");
+        bw.write("HTTP/1.1 404 File not found");
+        bw.newLine(); // empty line after status line
 
-            writeResponseHeaders(bw);
+        writeResponseHeaders(bw);
 
-            bw.flush();
-        } catch (IOException e) {
-            logger.log(Level.SEVERE, "Error writing to the socket", e);
-        }
+        sendFileInResponse(bw, URI.create(URI_SCHEME_FILE + host + HTML_NOT_FOUND));
     }
 
-    private void respondOk(OutputStream out, URI fileUri) {
-        try (BufferedWriter bw = new BufferedWriter(new PrintWriter(out))) {
-            System.out.println("RESPONDING");
-            bw.write("HTTP/1.1 200 OK");
-            bw.newLine(); // empty line after status line
+    private void respondOk(BufferedWriter bw, URI fileUri) throws IOException {
+        System.out.println("RESPONDING");
+        bw.write("HTTP/1.1 200 OK");
+        bw.newLine(); // empty line after status line
 
-            writeResponseHeaders(bw);
+        writeResponseHeaders(bw);
 
-            BufferedReader br = new BufferedReader(new FileReader(new File(fileUri.getPath())));
-            String fileLine;
-            while ((fileLine = br.readLine()) != null) {
-                bw.write(fileLine);
-                bw.newLine();
-            }
-
-            //bw.newLine(); // TODO ??
-            bw.flush();
-        } catch (IOException e) {
-            logger.log(Level.SEVERE, "Error writing to the socket", e);
-        }
+        sendFileInResponse(bw, fileUri);
     }
 
-    private void respondForbidden(OutputStream out) {
-        try (BufferedWriter bw = new BufferedWriter(new PrintWriter(out))) {
-            System.out.println("RESPONDING - Forbidden/Session expired");
-            bw.write("HTTP/1.1 403 Forbidden");
-            bw.newLine(); // empty line after status line
+    private void respondForbidden(BufferedWriter bw) throws IOException {
+        System.out.println("RESPONDING - Forbidden/Session expired");
+        bw.write("HTTP/1.1 403 Forbidden");
+        bw.newLine(); // empty line after status line
 
-            writeResponseHeaders(bw);
+        writeResponseHeaders(bw);
 
-            BufferedReader br = new BufferedReader(new FileReader(new File(URI.create(URI_SCHEME_FILE + host + HTML_FORBIDDEN))));
-            String fileLine;
-            while ((fileLine = br.readLine()) != null) {
-                bw.write(fileLine);
-                bw.newLine();
-            }
-
-            bw.flush();
-        } catch (IOException e) {
-            logger.log(Level.SEVERE, "Error writing to the socket", e);
-        }
+        sendFileInResponse(bw, URI.create(URI_SCHEME_FILE + host + HTML_FORBIDDEN));
     }
 
     // TODO: can forget insert this in some respond... method
@@ -162,5 +136,17 @@ public class WebServerThread extends Thread {
         bw.newLine();
 
         bw.newLine(); // empty line after headers
+    }
+
+    private void sendFileInResponse(BufferedWriter bw, URI fileUri) throws IOException {
+        try (BufferedReader br = new BufferedReader(new FileReader(new File(fileUri.getPath())))) {
+            String fileLine;
+            while ((fileLine = br.readLine()) != null) {
+                bw.write(fileLine);
+                bw.newLine();
+            }
+        } catch (FileNotFoundException e) {
+            logger.log(Level.SEVERE, "Cannot find " + fileUri.getPath(), e);
+        }
     }
 }
