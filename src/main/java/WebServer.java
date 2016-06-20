@@ -21,34 +21,43 @@ public class WebServer {
     private static final String DEFAULT_HOST = "D:/web-server";
     private static final String DEFAULT_SESSION_INTERVAL = "60";
 
+    public static int PORT;
+    public static String HOST;
+    public static int SESSION_INTERVAL;
+
     public static void main(String[] args) {
         logger.info("Starting a server");
 
         // use port and host from config file
         Properties properties = getPropertiesList();
-        listen(getPort(properties), getHost(properties), getSessionInterval(properties));
+
+        PORT = getPortFromPropeties(properties);
+        HOST = getHostFromProperties(properties); // files are stored here
+        SESSION_INTERVAL = getSessionIntervalFromProperties(properties);
+
+        listen();
     }
 
-    private static void listen(int portNumber, String homeDir, int sessionInterval) {
-        try (ServerSocket serverSocket = new ServerSocket(portNumber)) {
+    private static void listen() {
+        try (ServerSocket serverSocket = new ServerSocket(PORT)) {
             while (true) {
                 System.out.println("START NEW THREAD");
-                new WebServerThread(serverSocket.accept(), homeDir, sessionInterval).run();
+                new WebServerThread(serverSocket.accept()).run();
             }
         } catch (IOException e) {
-            logger.log(Level.SEVERE, "Cannot listen on port " + portNumber, e);
+            logger.log(Level.SEVERE, "Cannot listen on port " + PORT, e);
         }
     }
 
-    private static int getPort(Properties properties) {
+    private static int getPortFromPropeties(Properties properties) {
         return Integer.parseInt(properties.getProperty(PROPERTIES_KEY_PORT, DEFAULT_PORT));
     }
 
-    private static String getHost(Properties properties) {
+    private static String getHostFromProperties(Properties properties) {
         return properties.getProperty(PROPERTIES_KEY_HOST, DEFAULT_HOST);
     }
 
-    private static int getSessionInterval(Properties properties) {
+    private static int getSessionIntervalFromProperties(Properties properties) {
         return Integer.parseInt(properties.getProperty(PROPERTIES_KEY_SESSION_INTERVAL, DEFAULT_SESSION_INTERVAL));
     }
 

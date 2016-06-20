@@ -21,6 +21,7 @@ public class WebServerThread extends Thread {
     private static final String HEADER_DATE = "Date: ";
     private static final String HEADER_SERVER = "Server: ";
     private static final String HEADER_SET_COOKIE = "Set-Cookie: ";
+    private static final String HEADER_COOKIE = "Cookie: ";
     private static final String COOKIE_SESSION_ID = "SESSID=";
 
     private static final String URI_SCHEME_FILE = "file:///";
@@ -30,16 +31,12 @@ public class WebServerThread extends Thread {
     private static final String SERVER_NAME = "noname.server.ru";
 
     private Socket socket;
-    private String host; // files are stored here
-    private int sessionInterval;
-    private ConcurrentHashMap<String, String> sessionIdMap = new ConcurrentHashMap<>();
+    private static ConcurrentHashMap<String, String> sessionIdMap = new ConcurrentHashMap<>();
 
-    public WebServerThread(Socket socket, String host, int sessionInterval) {
+    public WebServerThread(Socket socket) {
         //super("WebServerThread"); TODO
         System.out.println("NEW THREAD");
         this.socket = socket;
-        this.host = host;
-        this.sessionInterval = sessionInterval;
     }
 
     @Override
@@ -48,6 +45,12 @@ public class WebServerThread extends Thread {
              BufferedWriter bw = new BufferedWriter(new PrintWriter(socket.getOutputStream(), true))) {
 
             String requestLine = in.readLine();
+            String headerLine;
+
+            while (!(headerLine = in.readLine()).isEmpty()) {
+
+            }
+
             if (requestLine != null && requestLine.startsWith(REQUEST_GET)) {
                 int pathStart = requestLine.indexOf(" ") + 1;
                 int pathFinish = requestLine.indexOf(" ", pathStart);
@@ -67,11 +70,11 @@ public class WebServerThread extends Thread {
         switch (path) {
             case "/":
                 // return index.html
-                respondOk(bw, URI.create(URI_SCHEME_FILE + host + HTML_INDEX));
+                respondOk(bw, URI.create(URI_SCHEME_FILE + WebServer.HOST + HTML_INDEX));
                 break;
             default:
                 // return requested file
-                URI fileUri = URI.create(URI_SCHEME_FILE + host + path);
+                URI fileUri = URI.create(URI_SCHEME_FILE + WebServer.HOST + path);
                 System.out.println("File URI: " + fileUri);
                 if (Files.exists(Paths.get(fileUri))) {
                     respondOk(bw, fileUri);
@@ -89,7 +92,7 @@ public class WebServerThread extends Thread {
 
         writeResponseHeaders(bw);
 
-        sendFileInResponse(bw, URI.create(URI_SCHEME_FILE + host + HTML_NOT_FOUND));
+        sendFileInResponse(bw, URI.create(URI_SCHEME_FILE + WebServer.HOST + HTML_NOT_FOUND));
     }
 
     private void respondOk(BufferedWriter bw, URI fileUri) throws IOException {
@@ -109,7 +112,7 @@ public class WebServerThread extends Thread {
 
         writeResponseHeaders(bw);
 
-        sendFileInResponse(bw, URI.create(URI_SCHEME_FILE + host + HTML_FORBIDDEN));
+        sendFileInResponse(bw, URI.create(URI_SCHEME_FILE + WebServer.HOST + HTML_FORBIDDEN));
     }
 
     // TODO: can forget insert this in some respond... method
