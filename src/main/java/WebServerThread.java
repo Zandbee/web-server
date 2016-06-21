@@ -31,12 +31,14 @@ public class WebServerThread extends Thread {
     private static final String SERVER_NAME = "noname.server.ru";
 
     private Socket socket;
+    private ConfigurationManager configuration;
     private static ConcurrentHashMap<String, String> sessionIdMap = new ConcurrentHashMap<>();
 
-    public WebServerThread(Socket socket) {
+    public WebServerThread(Socket socket, ConfigurationManager configuration) {
         //super("WebServerThread"); TODO
         System.out.println("NEW THREAD");
         this.socket = socket;
+        this.configuration = configuration;
     }
 
     @Override
@@ -70,11 +72,11 @@ public class WebServerThread extends Thread {
         switch (path) {
             case "/":
                 // return index.html
-                respondOk(bw, URI.create(URI_SCHEME_FILE + WebServer.HOST + HTML_INDEX));
+                respondOk(bw, URI.create(URI_SCHEME_FILE + configuration.getHost() + HTML_INDEX));
                 break;
             default:
                 // return requested file
-                URI fileUri = URI.create(URI_SCHEME_FILE + WebServer.HOST + path);
+                URI fileUri = URI.create(URI_SCHEME_FILE + configuration.getHost() + path);
                 System.out.println("File URI: " + fileUri);
                 if (Files.exists(Paths.get(fileUri))) {
                     respondOk(bw, fileUri);
@@ -92,7 +94,7 @@ public class WebServerThread extends Thread {
 
         writeResponseHeaders(bw);
 
-        sendFileInResponse(bw, URI.create(URI_SCHEME_FILE + WebServer.HOST + HTML_NOT_FOUND));
+        sendFileInResponse(bw, URI.create(URI_SCHEME_FILE + configuration.getHost() + HTML_NOT_FOUND));
     }
 
     private void respondOk(BufferedWriter bw, URI fileUri) throws IOException {
@@ -112,11 +114,11 @@ public class WebServerThread extends Thread {
 
         writeResponseHeaders(bw);
 
-        sendFileInResponse(bw, URI.create(URI_SCHEME_FILE + WebServer.HOST + HTML_FORBIDDEN));
+        sendFileInResponse(bw, URI.create(URI_SCHEME_FILE + configuration.getHost() + HTML_FORBIDDEN));
     }
 
     // TODO: can forget insert this in some respond... method
-    private void writeResponseHeaders(BufferedWriter bw) throws IOException { // TODO: static?
+    private void writeResponseHeaders(BufferedWriter bw) throws IOException {
         // any server information
         bw.write(HEADER_SERVER + SERVER_NAME);
         bw.newLine();
