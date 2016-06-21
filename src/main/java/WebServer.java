@@ -17,7 +17,7 @@ public class WebServer {
     }
 
     private static void listen() {
-        ConfigurationManager configuration = new ConfigurationManager(PROPERTIES_FILE);
+        ConfigurationManager configuration = ConfigurationManager.getConfiguration(PROPERTIES_FILE);
         int port = configuration.getPort();
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             while (true) {

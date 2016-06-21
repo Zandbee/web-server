@@ -19,16 +19,24 @@ public class ConfigurationManager {
     private static final String DEFAULT_HOST = "D:/web-server";
     private static final String DEFAULT_SESSION_INTERVAL = "60";
 
+    private static ConfigurationManager configuration = null;
     private int port;
     private String host;
     private int sessionInterval;
 
-    public ConfigurationManager(String configurationFile) {
+    private ConfigurationManager(String configurationFile) {
         Properties properties = getPropertiesList(configurationFile);
 
         this.port = getPortFromPropeties(properties);
         this.host = getHostFromProperties(properties);
         this.sessionInterval = getSessionIntervalFromProperties(properties);
+    }
+
+    public static ConfigurationManager getConfiguration(String configurationFile) {
+        if (configuration == null) {
+            configuration = new ConfigurationManager(configurationFile);
+        }
+        return configuration;
     }
 
     public int getPort() {
