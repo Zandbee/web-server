@@ -106,8 +106,6 @@ public class WebServerThread extends Thread {
 
                 respond(bw, path);
             }
-
-            //socket.close();
         } catch (IOException e) {
             logger.log(Level.SEVERE, "Error reading from or writing to the socket", e);
         } /*catch (InterruptedException e) {

@@ -1,5 +1,6 @@
 import java.io.IOException;
 import java.net.ServerSocket;
+import java.net.Socket;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -23,7 +24,9 @@ public class WebServer {
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             while (true) {
                 System.out.println("START NEW THREAD");
-                new WebServerThread(serverSocket.accept(), configuration, counter).start();
+                try (Socket socket = serverSocket.accept()) {
+                    new WebServerThread(socket, configuration, counter).start();
+                }
             }
         } catch (IOException e) {
             logger.log(Level.SEVERE, "Cannot listen on port " + port, e);
