@@ -3,10 +3,7 @@ import java.net.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.Locale;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -30,25 +27,39 @@ public class WebServerThread extends Thread {
     private static final String HTML_INDEX = "/index.html";
     private static final String HTML_FORBIDDEN = "/forbidden.html";
     private static final String HTML_NOT_FOUND = "/notfound.html";
+    private static final String HTML_UNAVAILABLE = "/unavailable.html";
+
     private static final String SERVER_NAME = "noname.server.ru";
 
     private Socket socket;
     private ConfigurationManager configuration;
+    private WebServerConnectionsCounter connectionsCounter;
     private String sessionId = null;
     private static ConcurrentHashMap<String, String> sessionMap = new ConcurrentHashMap<>();
     private boolean sessionExpired = false;
 
-    public WebServerThread(Socket socket, ConfigurationManager configuration) {
+    public WebServerThread(Socket socket, ConfigurationManager configuration, WebServerConnectionsCounter connectionsCounter) {
         super(CLASS_NAME);
         System.out.println("NEW THREAD");
         this.socket = socket;
         this.configuration = configuration;
+        this.connectionsCounter = connectionsCounter;
     }
 
     @Override
     public void run() {
         try (BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream(), UTF_8));
              BufferedWriter bw = new BufferedWriter(new PrintWriter(socket.getOutputStream(), true))) {
+
+            if (connectionsCounter.increment() > configuration.getMaxConnectionsNumber()) {
+                System.out.println("Max connections number exceeded. Connection is rejected");
+                System.out.println("Conn number incremented to " + connectionsCounter.getValue());
+                respondUnavailable(bw);
+                return;
+            }
+
+            System.out.println("Conn number incremented to " + connectionsCounter.getValue());
+            //TimeUnit.SECONDS.sleep(new Random().nextInt(10) + 1);
 
             String requestLine = in.readLine();
             String headerLine;
@@ -99,6 +110,11 @@ public class WebServerThread extends Thread {
             //socket.close();
         } catch (IOException e) {
             logger.log(Level.SEVERE, "Error reading from or writing to the socket", e);
+        } /*catch (InterruptedException e) {
+            // TODO remove me!!!
+        }*/ finally {
+            connectionsCounter.decrement();
+            System.out.println("Conn counter decremented to " + connectionsCounter.getValue());
         }
     }
 
@@ -117,12 +133,11 @@ public class WebServerThread extends Thread {
         switch (path) {
             case "/":
                 // return index.html
-                respondOk(bw, URI.create(URI_SCHEME_FILE + configuration.getHost() + HTML_INDEX));
+                respondOk(bw, toFileUri(HTML_INDEX));
                 break;
             default:
                 // return requested file
                 URI fileUri = URI.create(URI_SCHEME_FILE + configuration.getHost() + path);
-                System.out.println("File URI: " + fileUri);
                 if (Files.exists(Paths.get(fileUri))) {
                     respondOk(bw, fileUri);
                 } else {
@@ -139,7 +154,7 @@ public class WebServerThread extends Thread {
 
         writeResponseHeaders(bw);
 
-        sendFileInResponse(bw, URI.create(URI_SCHEME_FILE + configuration.getHost() + HTML_NOT_FOUND));
+        sendFileInResponse(bw, toFileUri(HTML_NOT_FOUND));
     }
 
     private void respondOk(BufferedWriter bw, URI fileUri) throws IOException {
@@ -159,20 +174,31 @@ public class WebServerThread extends Thread {
 
         writeResponseHeaders(bw);
 
-        sendFileInResponse(bw, URI.create(URI_SCHEME_FILE + configuration.getHost() + HTML_FORBIDDEN));
+        sendFileInResponse(bw, toFileUri(HTML_FORBIDDEN));
+    }
+
+    private void respondUnavailable(BufferedWriter bw) throws IOException {
+        System.out.println("RESPONDING - Unavailable");
+        bw.write("HTTP/1.1 503 Service Unavailable");
+        bw.newLine();
+
+        writeResponseHeaders(bw);
+
+        sendFileInResponse(bw, toFileUri(HTML_UNAVAILABLE));
     }
 
     // TODO: can forget insert this in some respond... method
     private void writeResponseHeaders(BufferedWriter bw) throws IOException {
-        // any server information
+        // server name header
         bw.write(HEADER_SERVER + SERVER_NAME);
         bw.newLine();
 
-        // current server time
+        // server time header
         SimpleDateFormat httpDateFormat = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.ENGLISH);
         bw.write(HEADER_DATE + httpDateFormat.format(new Date()));
         bw.newLine();
 
+        // session id header
         if (sessionId == null || isSessionExpired()) {
             // generate new session id and add it to sessionMap
             // after all, set session expired false
@@ -214,5 +240,9 @@ public class WebServerThread extends Thread {
 
     private boolean isSessionExpired() {
         return sessionExpired;
+    }
+
+    private URI toFileUri(String fileName) throws IOException {
+        return URI.create(URI_SCHEME_FILE + configuration.getHost() + fileName);
     }
 }

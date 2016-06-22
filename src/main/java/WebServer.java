@@ -19,10 +19,11 @@ public class WebServer {
     private static void listen() {
         ConfigurationManager configuration = ConfigurationManager.getConfiguration(PROPERTIES_FILE);
         int port = configuration.getPort();
+        WebServerConnectionsCounter counter = new WebServerConnectionsCounter();
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             while (true) {
                 System.out.println("START NEW THREAD");
-                new WebServerThread(serverSocket.accept(), configuration).run();
+                new WebServerThread(serverSocket.accept(), configuration, counter).start();
             }
         } catch (IOException e) {
             logger.log(Level.SEVERE, "Cannot listen on port " + port, e);
