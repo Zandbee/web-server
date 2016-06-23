@@ -34,7 +34,7 @@ public class WebServerThread extends Thread {
     private Socket socket;
     private ConfigurationManager configuration;
     private WebServerConnectionsCounter connectionsCounter;
-    private String sessionId = null;
+    private String sessionId = null; // TODO convert to method variable?
     private static ConcurrentHashMap<String, String> sessionMap = new ConcurrentHashMap<>();
     private boolean sessionExpired = false;
 
@@ -51,80 +51,46 @@ public class WebServerThread extends Thread {
         try (BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream(), UTF_8));
              BufferedWriter bw = new BufferedWriter(new PrintWriter(socket.getOutputStream(), true))) {
 
-            if (connectionsCounter.increment() > configuration.getMaxConnectionsNumber()) {
-                System.out.println("Max connections number exceeded. Connection is rejected");
-                System.out.println("Conn number incremented to " + connectionsCounter.getValue());
+            if (isExcessConnection()) {
                 respondUnavailable(bw);
                 return;
             }
 
-            System.out.println("Conn number incremented to " + connectionsCounter.getValue());
-            //TimeUnit.SECONDS.sleep(new Random().nextInt(10) + 1);
-
             String requestLine = in.readLine();
             String headerLine;
 
-            while (!(headerLine = in.readLine()).isEmpty()) {
+            while (!(headerLine = in.readLine()).isEmpty()) { // TODO headerLine != null
                 if (headerLine.startsWith(HEADER_COOKIE) && headerLine.contains(COOKIE_SESSION_ID)) {
-
                     // there is session id for this client
                     sessionId = getSessionIdFromCookie(headerLine);
-
                     System.out.println("Session ID = " + String.valueOf(sessionId));
 
-                    String sessionStartTimeString = sessionMap.get(sessionId);
-                    System.out.println("Session start time String = " + sessionStartTimeString);
-                    if (sessionStartTimeString != null) {
-                        long sessionStartTime = Long.parseLong(sessionStartTimeString);
-                        long currentTime = System.currentTimeMillis();
-                        System.out.println("Cur time = " + currentTime + ", session start = " + sessionStartTime);
-                        if ((currentTime - sessionStartTime) / 1000 >= configuration.getSessionInterval()) {
-                            // session id expired - respondForbidden, set new session in writeResponseHeaders, delete old session, return
-                            System.out.println("Session expired");
-                            setSessionExpired(true);
-                            respondForbidden(bw);
-                            return;
-                        } else {
-                            // session id is ok
-                            System.out.println("Session is Ok");
-                            setSessionExpired(false);
-                        }
-                    } else {
-                        // there is no such session id in the map
-                        System.out.println("No session in map. Set expired");
-                        setSessionExpired(true);
+                    if (isSessionExpired(sessionMap.get(sessionId))) {
+                        respondForbidden(bw);
+                        return;
                     }
                 }
             }
 
             System.out.println("Session OK or no session id");
             if (requestLine != null && requestLine.startsWith(REQUEST_GET)) {
-                int pathStart = requestLine.indexOf(" ") + 1;
-                int pathFinish = requestLine.indexOf(" ", pathStart);
-                String path = requestLine.substring(pathStart, pathFinish);
+                String path = getGetRequestedFilePath(requestLine);
                 System.out.println("Requested path: " + path);
 
                 respond(bw, path);
             }
         } catch (IOException e) {
             logger.log(Level.SEVERE, "Error reading from or writing to the socket", e);
-        } /*catch (InterruptedException e) {
-            // TODO remove me!!!
-        }*/ finally {
+        } finally {
             connectionsCounter.decrement();
             System.out.println("Conn counter decremented to " + connectionsCounter.getValue());
         }
     }
 
-    private String getSessionIdFromCookie(String headerCookieLine) {
-        int cookieSessionIdPosition = headerCookieLine.indexOf(COOKIE_SESSION_ID) + COOKIE_SESSION_ID.length();
-        int cookieSessionIdEndPosition = headerCookieLine.indexOf(";", cookieSessionIdPosition);
-
-        if (cookieSessionIdEndPosition > 0) {
-            return headerCookieLine.substring(cookieSessionIdPosition, cookieSessionIdEndPosition);
-        } else {
-            return headerCookieLine.substring(cookieSessionIdPosition);
-        }
+    private String getGetRequestedFilePath(String requestLine) {
+        int pathStart = requestLine.indexOf(" ") + 1;
+        int pathFinish = requestLine.indexOf(" ", pathStart);
+        return requestLine.substring(pathStart, pathFinish);
     }
 
     private void respond(BufferedWriter bw, String path) throws IOException {
@@ -197,7 +163,7 @@ public class WebServerThread extends Thread {
         bw.newLine();
 
         // session id header
-        if (sessionId == null || isSessionExpired()) {
+        if (sessionId == null || isSessionExpired(null)) {
             // generate new session id and add it to sessionMap
             // after all, set session expired false
             System.out.println("Write cookie session header");
@@ -225,6 +191,17 @@ public class WebServerThread extends Thread {
         }
     }
 
+    private String getSessionIdFromCookie(String headerCookieLine) {
+        int cookieSessionIdPosition = headerCookieLine.indexOf(COOKIE_SESSION_ID) + COOKIE_SESSION_ID.length();
+        int cookieSessionIdEndPosition = headerCookieLine.indexOf(";", cookieSessionIdPosition);
+
+        if (cookieSessionIdEndPosition > 0) {
+            return headerCookieLine.substring(cookieSessionIdPosition, cookieSessionIdEndPosition);
+        } else {
+            return headerCookieLine.substring(cookieSessionIdPosition);
+        }
+    }
+
     private static String generateSessionId() {
         return UUID.randomUUID().toString();
     }
@@ -236,8 +213,38 @@ public class WebServerThread extends Thread {
         this.sessionExpired = sessionExpired;
     }
 
-    private boolean isSessionExpired() {
-        return sessionExpired;
+    private boolean isSessionExpired(String sessionStartTimeString) {
+        if (sessionStartTimeString != null) {
+            long sessionStartTime = Long.parseLong(sessionStartTimeString);
+            long currentTime = System.currentTimeMillis();
+            System.out.println("Cur time = " + currentTime + ", session start = " + sessionStartTime);
+
+            if ((currentTime - sessionStartTime) / 1000 >= configuration.getSessionInterval()) {
+                // session id expired - respondForbidden, set new session in writeResponseHeaders, delete old session, return
+                System.out.println("Session expired");
+                setSessionExpired(true);
+            } else {
+                // session id is ok
+                System.out.println("Session is Ok");
+                setSessionExpired(false);
+            }
+        } else {
+            // there is no such session id in the map
+            System.out.println("No session in map. Set expired");
+            setSessionExpired(true);
+        }
+
+        return this.sessionExpired;
+    }
+
+    private boolean isExcessConnection() {
+        if (connectionsCounter.increment() > configuration.getMaxConnectionsNumber()) {
+            System.out.println("Max connections number exceeded. Connection is rejected");
+            System.out.println("Conn number incremented to " + connectionsCounter.getValue());
+            return true;
+        } else {
+            return false;
+        }
     }
 
     private URI toFileUri(String fileName) throws IOException {

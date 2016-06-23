@@ -1,6 +1,7 @@
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -11,6 +12,8 @@ public class WebServer {
     private static final Logger logger = Logger.getLogger(WebServer.class.getName());
 
     private static final String PROPERTIES_FILE = "config.properties";
+
+    private static CopyOnWriteArrayList<Socket> clientSockets = new CopyOnWriteArrayList<>();
 
     public static void main(String[] args) {
         logger.info("Starting a server");
@@ -31,5 +34,14 @@ public class WebServer {
         } catch (IOException e) {
             logger.log(Level.SEVERE, "Cannot listen on port " + port, e);
         }
+    }
+
+    private static void registerShutdownHook() {
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+            @Override
+            public void run() {
+
+            }
+        });
     }
 }
