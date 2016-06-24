@@ -39,7 +39,6 @@ public class WebServerThread implements Runnable {
 
     private Socket socket;
     private ConfigurationManager configuration;
-    private String sessionId = null; // TODO convert to method variable?
     private static ConcurrentHashMap<String, String> sessionMap = new ConcurrentHashMap<>();
     private boolean sessionExpired = false;
 
@@ -56,15 +55,16 @@ public class WebServerThread implements Runnable {
 
             String requestLine = in.readLine();
             String headerLine;
+            String sessionId = null; // TODO: passing it from one to another all the time
 
-            while ((headerLine = in.readLine()) != null && headerLine.isEmpty()) {
+            while ((headerLine = in.readLine()) != null && !headerLine.isEmpty()) {
                 if (headerLine.startsWith(HEADER_COOKIE) && headerLine.contains(COOKIE_SESSION_ID)) {
                     // there is session id for this client
                     sessionId = getSessionIdFromCookie(headerLine);
                     logger.info("Session ID = " + String.valueOf(sessionId));
 
-                    if (isSessionExpired(sessionMap.get(sessionId))) {
-                        respondForbidden(bw);
+                    if (isSessionExpired(sessionId)) {
+                        respondForbidden(bw, sessionId);
                         return;
                     }
                 }
@@ -75,7 +75,7 @@ public class WebServerThread implements Runnable {
                 String path = getGetRequestedFilePath(requestLine);
                 logger.info("Requested path: " + path);
 
-                respond(bw, path);
+                respond(bw, path, sessionId);
             }
         } catch (IOException e) {
             logger.log(Level.SEVERE, "Error reading from or writing to the socket", e);
@@ -88,66 +88,66 @@ public class WebServerThread implements Runnable {
         return requestLine.substring(pathStart, pathFinish);
     }
 
-    private void respond(BufferedWriter bw, String path) throws IOException {
+    private void respond(BufferedWriter bw, String path, String sessionId) throws IOException {
         switch (path) {
             case "/":
                 // return index.html
-                respondOk(bw, toFileUri(HTML_INDEX));
+                respondOk(bw, toFileUri(HTML_INDEX), sessionId);
                 break;
             default:
                 // return requested file
                 URI fileUri = URI.create(URI_SCHEME_FILE + configuration.getHost() + path);
                 if (Files.exists(Paths.get(fileUri))) {
-                    respondOk(bw, fileUri);
+                    respondOk(bw, fileUri, sessionId);
                 } else {
-                    respondFileNotFound(bw);
+                    respondFileNotFound(bw, sessionId);
                 }
                 break;
         }
     }
 
-    private void respondFileNotFound(BufferedWriter bw) throws IOException {
+    private void respondFileNotFound(BufferedWriter bw, String sessionId) throws IOException {
         logger.info("RESPONDING - File not found");
         bw.write(HTTP_404);
         bw.newLine();
 
-        writeResponseHeaders(bw);
+        writeResponseHeaders(bw, sessionId);
 
         sendFileInResponse(bw, toFileUri(HTML_NOT_FOUND));
     }
 
-    private void respondOk(BufferedWriter bw, URI fileUri) throws IOException {
+    private void respondOk(BufferedWriter bw, URI fileUri, String sessionId) throws IOException {
         logger.info("RESPONDING");
         bw.write(HTTP_200);
         bw.newLine();
 
-        writeResponseHeaders(bw);
+        writeResponseHeaders(bw, sessionId);
 
         sendFileInResponse(bw, fileUri);
     }
 
-    private void respondForbidden(BufferedWriter bw) throws IOException {
+    private void respondForbidden(BufferedWriter bw, String sessionId) throws IOException {
         logger.info("RESPONDING - Forbidden/Session expired");
         bw.write(HTTP_403);
         bw.newLine();
 
-        writeResponseHeaders(bw);
+        writeResponseHeaders(bw, sessionId);
 
         sendFileInResponse(bw, toFileUri(HTML_FORBIDDEN));
     }
 
-    private void respondUnavailable(BufferedWriter bw) throws IOException {
+    private void respondUnavailable(BufferedWriter bw, String sessionId) throws IOException {
         logger.info("RESPONDING - Unavailable");
         bw.write(HTTP_503);
         bw.newLine();
 
-        writeResponseHeaders(bw);
+        writeResponseHeaders(bw, sessionId);
 
         sendFileInResponse(bw, toFileUri(HTML_UNAVAILABLE));
     }
 
     // TODO: can forget insert this in some respond... method
-    private void writeResponseHeaders(BufferedWriter bw) throws IOException {
+    private void writeResponseHeaders(BufferedWriter bw, String sessionId) throws IOException {
         // server name header
         bw.write(HEADER_SERVER + SERVER_NAME);
         bw.newLine();
@@ -158,13 +158,14 @@ public class WebServerThread implements Runnable {
         bw.newLine();
 
         // session id header
-        if (sessionId == null || isSessionExpired(null)) {
+        if (sessionId == null || isSessionExpired(sessionId)) {
             // generate new session id and add it to sessionMap
             // after all, set session expired false
             logger.info("Write cookie session header");
             sessionId = generateSessionId();
+            logger.info("NEW SESSION GENERATED: " + sessionId);
             sessionMap.put(sessionId, String.valueOf(System.currentTimeMillis()));
-            setSessionExpired(false);
+            setSessionExpired(false, sessionId);
 
             bw.write(HEADER_SET_COOKIE + COOKIE_SESSION_ID + sessionId);
             bw.newLine();
@@ -201,32 +202,33 @@ public class WebServerThread implements Runnable {
         return UUID.randomUUID().toString();
     }
 
-    private void setSessionExpired(boolean sessionExpired) {
+    private void setSessionExpired(boolean sessionExpired, String sessionId) {
         if (sessionExpired) {
             sessionMap.remove(sessionId);
         }
         this.sessionExpired = sessionExpired;
     }
 
-    private boolean isSessionExpired(String sessionStartTimeString) {
+    private boolean isSessionExpired(String sessionId) {
+        String sessionStartTimeString = sessionMap.get(sessionId);
         if (sessionStartTimeString != null) {
             long sessionStartTime = Long.parseLong(sessionStartTimeString);
             long currentTime = System.currentTimeMillis();
-            logger.info("Cur time = " + currentTime + ", session start = " + sessionStartTime);
+            logger.info("Cur time - session start = " + (currentTime - sessionStartTime));
 
             if ((currentTime - sessionStartTime) / 1000 >= configuration.getSessionInterval()) {
                 // session id expired - respondForbidden, set new session in writeResponseHeaders, delete old session, return
                 logger.info("Session expired");
-                setSessionExpired(true);
+                setSessionExpired(true, sessionId);
             } else {
                 // session id is ok
                 logger.info("Session is Ok");
-                setSessionExpired(false);
+                setSessionExpired(false, sessionId);
             }
         } else {
             // there is no such session id in the map
-            logger.info("No session in map. Set expired");
-            setSessionExpired(true);
+            logger.info("No session in map. Set expired: " + sessionId);
+            setSessionExpired(true, sessionId);
         }
 
         return this.sessionExpired;
