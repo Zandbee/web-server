@@ -12,10 +12,15 @@ import java.util.logging.Logger;
  * Created by vstrokova on 08.06.2016.
  */
 public class WebServerThread implements Runnable {
-    private static final String CLASS_NAME = WebServerThread.class.getName();
-    private static final Logger logger = Logger.getLogger(CLASS_NAME);
+    private static final Logger logger = Logger.getLogger(WebServerThread.class.getName());
+
     private static final String UTF_8 = "UTF-8";
     private static final String REQUEST_GET = "GET";
+
+    private static final String HTTP_404 = "HTTP/1.1 404 File not found";
+    private static final String HTTP_200 = "HTTP/1.1 200 OK";
+    private static final String HTTP_403 = "HTTP/1.1 403 Forbidden";
+    private static final String HTTP_503 = "HTTP/1.1 503 Service Unavailable";
 
     private static final String HEADER_DATE = "Date: ";
     private static final String HEADER_SERVER = "Server: ";
@@ -29,6 +34,7 @@ public class WebServerThread implements Runnable {
     private static final String HTML_NOT_FOUND = "/notfound.html";
     private static final String HTML_UNAVAILABLE = "/unavailable.html";
 
+    private static final String HTTP_DATE_TIME_PATTERN = "EEE, dd MMM yyyy HH:mm:ss z";
     private static final String SERVER_NAME = "noname.server.ru";
 
     private Socket socket;
@@ -51,11 +57,11 @@ public class WebServerThread implements Runnable {
             String requestLine = in.readLine();
             String headerLine;
 
-            while (!(headerLine = in.readLine()).isEmpty()) { // TODO headerLine != null
+            while ((headerLine = in.readLine()) != null && headerLine.isEmpty()) {
                 if (headerLine.startsWith(HEADER_COOKIE) && headerLine.contains(COOKIE_SESSION_ID)) {
                     // there is session id for this client
                     sessionId = getSessionIdFromCookie(headerLine);
-                    System.out.println("Session ID = " + String.valueOf(sessionId));
+                    logger.info("Session ID = " + String.valueOf(sessionId));
 
                     if (isSessionExpired(sessionMap.get(sessionId))) {
                         respondForbidden(bw);
@@ -64,10 +70,10 @@ public class WebServerThread implements Runnable {
                 }
             }
 
-            System.out.println("Session OK or no session id");
+            logger.info("Session OK or no session id");
             if (requestLine != null && requestLine.startsWith(REQUEST_GET)) {
                 String path = getGetRequestedFilePath(requestLine);
-                System.out.println("Requested path: " + path);
+                logger.info("Requested path: " + path);
 
                 respond(bw, path);
             }
@@ -101,8 +107,8 @@ public class WebServerThread implements Runnable {
     }
 
     private void respondFileNotFound(BufferedWriter bw) throws IOException {
-        System.out.println("RESPONDING - File not found");
-        bw.write("HTTP/1.1 404 File not found");
+        logger.info("RESPONDING - File not found");
+        bw.write(HTTP_404);
         bw.newLine();
 
         writeResponseHeaders(bw);
@@ -111,8 +117,8 @@ public class WebServerThread implements Runnable {
     }
 
     private void respondOk(BufferedWriter bw, URI fileUri) throws IOException {
-        System.out.println("RESPONDING");
-        bw.write("HTTP/1.1 200 OK");
+        logger.info("RESPONDING");
+        bw.write(HTTP_200);
         bw.newLine();
 
         writeResponseHeaders(bw);
@@ -121,8 +127,8 @@ public class WebServerThread implements Runnable {
     }
 
     private void respondForbidden(BufferedWriter bw) throws IOException {
-        System.out.println("RESPONDING - Forbidden/Session expired");
-        bw.write("HTTP/1.1 403 Forbidden");
+        logger.info("RESPONDING - Forbidden/Session expired");
+        bw.write(HTTP_403);
         bw.newLine();
 
         writeResponseHeaders(bw);
@@ -131,8 +137,8 @@ public class WebServerThread implements Runnable {
     }
 
     private void respondUnavailable(BufferedWriter bw) throws IOException {
-        System.out.println("RESPONDING - Unavailable");
-        bw.write("HTTP/1.1 503 Service Unavailable");
+        logger.info("RESPONDING - Unavailable");
+        bw.write(HTTP_503);
         bw.newLine();
 
         writeResponseHeaders(bw);
@@ -147,7 +153,7 @@ public class WebServerThread implements Runnable {
         bw.newLine();
 
         // server time header
-        SimpleDateFormat httpDateFormat = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.ENGLISH);
+        SimpleDateFormat httpDateFormat = new SimpleDateFormat(HTTP_DATE_TIME_PATTERN, Locale.ENGLISH);
         bw.write(HEADER_DATE + httpDateFormat.format(new Date()));
         bw.newLine();
 
@@ -155,7 +161,7 @@ public class WebServerThread implements Runnable {
         if (sessionId == null || isSessionExpired(null)) {
             // generate new session id and add it to sessionMap
             // after all, set session expired false
-            System.out.println("Write cookie session header");
+            logger.info("Write cookie session header");
             sessionId = generateSessionId();
             sessionMap.put(sessionId, String.valueOf(System.currentTimeMillis()));
             setSessionExpired(false);
@@ -174,7 +180,7 @@ public class WebServerThread implements Runnable {
                 bw.write(fileLine);
                 bw.newLine();
             }
-            bw.newLine(); // TODO: why need this line
+            bw.newLine();
         } catch (FileNotFoundException e) {
             logger.log(Level.SEVERE, "Cannot find " + fileUri.getPath(), e);
         }
@@ -206,20 +212,20 @@ public class WebServerThread implements Runnable {
         if (sessionStartTimeString != null) {
             long sessionStartTime = Long.parseLong(sessionStartTimeString);
             long currentTime = System.currentTimeMillis();
-            System.out.println("Cur time = " + currentTime + ", session start = " + sessionStartTime);
+            logger.info("Cur time = " + currentTime + ", session start = " + sessionStartTime);
 
             if ((currentTime - sessionStartTime) / 1000 >= configuration.getSessionInterval()) {
                 // session id expired - respondForbidden, set new session in writeResponseHeaders, delete old session, return
-                System.out.println("Session expired");
+                logger.info("Session expired");
                 setSessionExpired(true);
             } else {
                 // session id is ok
-                System.out.println("Session is Ok");
+                logger.info("Session is Ok");
                 setSessionExpired(false);
             }
         } else {
             // there is no such session id in the map
-            System.out.println("No session in map. Set expired");
+            logger.info("No session in map. Set expired");
             setSessionExpired(true);
         }
 

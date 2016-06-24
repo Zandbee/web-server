@@ -27,8 +27,7 @@ public class WebServer {
         executor = Executors.newFixedThreadPool(configuration.getMaxConnectionsNumber());
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             while (!executor.isShutdown()) {
-                System.out.println("START NEW THREAD");
-                    executor.execute(new WebServerThread(serverSocket.accept(), configuration));
+                executor.execute(new WebServerThread(serverSocket.accept(), configuration));
             }
         } catch (IOException e) {
             logger.log(Level.SEVERE, "Cannot listen on port " + port, e);
