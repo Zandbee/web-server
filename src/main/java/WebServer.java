@@ -1,7 +1,7 @@
 import java.io.IOException;
 import java.net.ServerSocket;
-import java.net.Socket;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -13,23 +13,22 @@ public class WebServer {
 
     private static final String PROPERTIES_FILE = "config.properties";
 
-    private static CopyOnWriteArrayList<Socket> clientSockets = new CopyOnWriteArrayList<>();
+    private static ExecutorService executor;
 
     public static void main(String[] args) {
         logger.info("Starting a server");
+        registerShutdownHook();
         listen();
     }
 
     private static void listen() {
         ConfigurationManager configuration = ConfigurationManager.getConfiguration(PROPERTIES_FILE);
         int port = configuration.getPort();
-        WebServerConnectionsCounter counter = new WebServerConnectionsCounter();
+        executor = Executors.newFixedThreadPool(configuration.getMaxConnectionsNumber());
         try (ServerSocket serverSocket = new ServerSocket(port)) {
-            while (true) {
+            while (!executor.isShutdown()) {
                 System.out.println("START NEW THREAD");
-                try (Socket socket = serverSocket.accept()) {
-                    new WebServerThread(socket, configuration, counter).start();
-                }
+                    executor.execute(new WebServerThread(serverSocket.accept(), configuration));
             }
         } catch (IOException e) {
             logger.log(Level.SEVERE, "Cannot listen on port " + port, e);
@@ -40,7 +39,7 @@ public class WebServer {
         Runtime.getRuntime().addShutdownHook(new Thread() {
             @Override
             public void run() {
-
+                executor.shutdown();
             }
         });
     }

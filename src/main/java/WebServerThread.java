@@ -11,7 +11,7 @@ import java.util.logging.Logger;
 /**
  * Created by vstrokova on 08.06.2016.
  */
-public class WebServerThread extends Thread {
+public class WebServerThread implements Runnable {
     private static final String CLASS_NAME = WebServerThread.class.getName();
     private static final Logger logger = Logger.getLogger(CLASS_NAME);
     private static final String UTF_8 = "UTF-8";
@@ -33,28 +33,20 @@ public class WebServerThread extends Thread {
 
     private Socket socket;
     private ConfigurationManager configuration;
-    private WebServerConnectionsCounter connectionsCounter;
     private String sessionId = null; // TODO convert to method variable?
     private static ConcurrentHashMap<String, String> sessionMap = new ConcurrentHashMap<>();
     private boolean sessionExpired = false;
 
-    public WebServerThread(Socket socket, ConfigurationManager configuration, WebServerConnectionsCounter connectionsCounter) {
-        super(CLASS_NAME);
+    public WebServerThread(Socket socket, ConfigurationManager configuration) {
         System.out.println("NEW THREAD");
         this.socket = socket;
         this.configuration = configuration;
-        this.connectionsCounter = connectionsCounter;
     }
 
     @Override
     public void run() {
         try (BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream(), UTF_8));
              BufferedWriter bw = new BufferedWriter(new PrintWriter(socket.getOutputStream(), true))) {
-
-            if (isExcessConnection()) {
-                respondUnavailable(bw);
-                return;
-            }
 
             String requestLine = in.readLine();
             String headerLine;
@@ -81,9 +73,6 @@ public class WebServerThread extends Thread {
             }
         } catch (IOException e) {
             logger.log(Level.SEVERE, "Error reading from or writing to the socket", e);
-        } finally {
-            connectionsCounter.decrement();
-            System.out.println("Conn counter decremented to " + connectionsCounter.getValue());
         }
     }
 
@@ -235,16 +224,6 @@ public class WebServerThread extends Thread {
         }
 
         return this.sessionExpired;
-    }
-
-    private boolean isExcessConnection() {
-        if (connectionsCounter.increment() > configuration.getMaxConnectionsNumber()) {
-            System.out.println("Max connections number exceeded. Connection is rejected");
-            System.out.println("Conn number incremented to " + connectionsCounter.getValue());
-            return true;
-        } else {
-            return false;
-        }
     }
 
     private URI toFileUri(String fileName) throws IOException {
