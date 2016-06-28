@@ -17,12 +17,13 @@ public class ConfigurationManager {
     private static final String PROPERTIES_KEY_MAX_CONNECTIONS_NUM = "max_connections_number";
 
     private static final String DEFAULT_PORT = "4444";
-    private static final String DEFAULT_HOST = "D:/web-server";
+    private static final String DEFAULT_HOST_DIR = "D:/web-server";
     private static final String DEFAULT_SESSION_INTERVAL = "60";
     private static final String DEFAULT_MAX_CONNECTIONS_NUM = "5";
 
     private static ConfigurationManager configuration = null;
-    private int port;
+
+    private final int port;
     private String host;
     private int sessionInterval;
     private int maxConnectionsNumber;
@@ -47,7 +48,7 @@ public class ConfigurationManager {
         return port;
     }
 
-    public String getHost() {
+    public String getHostDir() {
         return host;
     }
 
@@ -64,7 +65,7 @@ public class ConfigurationManager {
     }
 
     private static String getHostFromProperties(Properties properties) {
-        return properties.getProperty(PROPERTIES_KEY_HOST, DEFAULT_HOST);
+        return properties.getProperty(PROPERTIES_KEY_HOST, DEFAULT_HOST_DIR);
     }
 
     private static int getSessionIntervalFromProperties(Properties properties) {

@@ -16,12 +16,12 @@ public class WebServer {
     private static ExecutorService executor;
 
     public static void main(String[] args) {
-        logger.info("Starting a server");
         registerShutdownHook();
         listen();
     }
 
     private static void listen() {
+        logger.info("Server started");
         ConfigurationManager configuration = ConfigurationManager.getConfiguration(PROPERTIES_FILE);
         int port = configuration.getPort();
         executor = Executors.newFixedThreadPool(configuration.getMaxConnectionsNumber());
