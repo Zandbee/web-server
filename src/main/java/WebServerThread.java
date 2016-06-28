@@ -133,6 +133,8 @@ public class WebServerThread implements Runnable {
         logger.info("WRITE HEADERS");
         writeResponseHeaders(bw, sessionId);
 
+        bw.flush();
+
         // write file to response
         logger.info("CHECK FILE");
         if (fileUri == null) {
@@ -259,8 +261,6 @@ public class WebServerThread implements Runnable {
             while (is.read(bytes) != -1) {
                 os.write(bytes);
             }
-            /*BufferedWriter bw = new BufferedWriter(new PrintWriter(os, true));
-            bw.newLine();*/
         } catch (FileNotFoundException e) {
             logger.log(Level.SEVERE, "Cannot find " + fileUri.getPath(), e);
         }
