@@ -17,11 +17,6 @@ public class WebServerThread implements Runnable {
     private static final String UTF_8 = "UTF-8";
     private static final String REQUEST_GET = "GET";
 
-    private static final String HTTP_404 = "HTTP/1.1 404 File not found";
-    private static final String HTTP_200 = "HTTP/1.1 200 OK";
-    private static final String HTTP_403 = "HTTP/1.1 403 Forbidden";
-    private static final String HTTP_503 = "HTTP/1.1 503 Service Unavailable";
-
     private static final String HEADER_DATE = "Date: ";
     private static final String HEADER_SERVER = "Server: ";
     private static final String HEADER_SET_COOKIE = "Set-Cookie: ";
@@ -144,6 +139,7 @@ public class WebServerThread implements Runnable {
         sendFileInResponse(os, fileUri);
     }
 
+    // TODO: move to HttpCode class?
     private static void writeHttpStatusLogMessage(HttpCode code) throws IOException {
         switch (code) {
             case HTTP_200:
@@ -179,54 +175,6 @@ public class WebServerThread implements Runnable {
                 return toFileUri(HTML_NOT_FOUND);//TODO
         }
     }
-
-   /* private void respondFileNotFound(OutputStream os, String sessionId) throws IOException {
-        BufferedWriter bw = new BufferedWriter(new PrintWriter(os, true));
-
-        logger.info("RESPONDING - File not found");
-        bw.write(HTTP_404);
-        bw.newLine();
-
-        writeResponseHeaders(os, sessionId);
-
-        sendFileInResponse(os, toFileUri(HTML_NOT_FOUND));
-    }
-
-    private void respondOk(OutputStream os, URI fileUri, String sessionId) throws IOException {
-        BufferedWriter bw = new BufferedWriter(new PrintWriter(os, true));
-
-        logger.info("RESPONDING");
-        bw.write(HTTP_200);
-        bw.newLine();
-
-        writeResponseHeaders(os, sessionId);
-
-        sendFileInResponse(os, fileUri);
-    }
-
-    private void respondForbidden(OutputStream os, String sessionId) throws IOException {
-        BufferedWriter bw = new BufferedWriter(new PrintWriter(os, true));
-
-        logger.info("RESPONDING - Forbidden/Session expired");
-        bw.write(HTTP_403);
-        bw.newLine();
-
-        writeResponseHeaders(os, sessionId);
-
-        sendFileInResponse(os, toFileUri(HTML_FORBIDDEN));
-    }
-
-    private void respondUnavailable(OutputStream os, String sessionId) throws IOException {
-        BufferedWriter bw = new BufferedWriter(new PrintWriter(os, true));
-
-        logger.info("RESPONDING - Unavailable");
-        bw.write(HTTP_503);
-        bw.newLine();
-
-        writeResponseHeaders(os, sessionId);
-
-        sendFileInResponse(os, toFileUri(HTML_UNAVAILABLE));
-    }*/
 
     private void writeResponseHeaders(BufferedWriter bw, String sessionId) throws IOException {
         // server name header
@@ -318,7 +266,7 @@ public class WebServerThread implements Runnable {
     }
 
     private enum HttpCode {
-        HTTP_200 ("HTTP/1.1 200 OK"),
+        HTTP_200 ("HTTP/1.1 200 OK"), // TODO: const?
         HTTP_403 ("HTTP/1.1 403 Forbidden"),
         HTTP_404 ("HTTP/1.1 404 File not found"),
         HTTP_503 ("HTTP/1.1 503 Service Unavailable");

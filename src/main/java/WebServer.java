@@ -38,7 +38,10 @@ public class WebServer {
         Runtime.getRuntime().addShutdownHook(new Thread() {
             @Override
             public void run() {
-                executor.shutdown();
+                logger.warning("Server is shutting down");
+                if (executor != null) {
+                    executor.shutdown();
+                }
             }
         });
     }
