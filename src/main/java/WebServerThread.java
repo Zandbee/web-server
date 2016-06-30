@@ -1,5 +1,6 @@
 import java.io.*;
 import java.net.*;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
@@ -32,22 +33,23 @@ public class WebServerThread implements Runnable {
     private static final String HTTP_DATE_TIME_PATTERN = "EEE, dd MMM yyyy HH:mm:ss z";
     private static final String SERVER_NAME = "noname.server.ru";
 
-    private Socket socket;
-    private ConfigurationManager configuration;
-    private static ConcurrentHashMap<String, String> sessionMap = new ConcurrentHashMap<>();
-    private boolean sessionExpired = false;
+    private static final ConcurrentHashMap<String, String> SESSION_MAP = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, ByteBuffer> cache = new ConcurrentHashMap<>();
+    private final Socket socket;
+    private final ConfigurationManager configuration;
     private final String filesLocation;
+    private boolean sessionExpired = false;
 
     public WebServerThread(Socket socket, ConfigurationManager configuration) {
         System.out.println("NEW THREAD");
         this.socket = socket;
         this.configuration = configuration;
-        filesLocation = URI_SCHEME_FILE + this.configuration.getHostDir();
+        this.filesLocation = URI_SCHEME_FILE + this.configuration.getHostDir();
     }
-
 
     @Override
     public void run() {
+        long start = System.currentTimeMillis();
         try (BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream(), UTF_8));
              OutputStream os = socket.getOutputStream()) {
 
@@ -70,9 +72,11 @@ public class WebServerThread implements Runnable {
         } catch (IOException e) {
             logger.log(Level.SEVERE, "Error reading from or writing to the socket", e);
         }
+        long finish = System.currentTimeMillis();
+        System.out.println("THREAD TIME = " + (finish - start));
     }
 
-    private String getSessionId(BufferedReader in) throws IOException {
+    private static String getSessionId(BufferedReader in) throws IOException {
         String headerLine;
         String sessionId = null;
         while ((headerLine = in.readLine()) != null && !headerLine.isEmpty()) {
@@ -85,7 +89,7 @@ public class WebServerThread implements Runnable {
         return sessionId;
     }
 
-    private String getGetRequestedFilePath(String requestLine) {
+    private static String getGetRequestedFilePath(String requestLine) {
         int pathStart = requestLine.indexOf(" ") + 1;
         int pathFinish = requestLine.indexOf(" ", pathStart);
         return requestLine.substring(pathStart, pathFinish);
@@ -96,14 +100,14 @@ public class WebServerThread implements Runnable {
             case "/":
                 // return index.html
                 //respondOk(os, toFileUri(HTML_INDEX), sessionId);
-                respondWithStatus(HttpCode.HTTP_200, os, toFileUri(HTML_INDEX), sessionId);
+                respondWithStatus(HttpCode.HTTP_200, os, HTML_INDEX, sessionId);
                 break;
             default:
                 // return requested file
                 URI fileUri = URI.create(filesLocation + path);
                 if (Files.exists(Paths.get(fileUri))) {
                     //respondOk(os, fileUri, sessionId);
-                    respondWithStatus(HttpCode.HTTP_200, os, fileUri, sessionId);
+                    respondWithStatus(HttpCode.HTTP_200, os, path, sessionId);
                 } else {
                     //respondFileNotFound(os, sessionId);
                     respondWithStatus(HttpCode.HTTP_404, os, null, sessionId);
@@ -112,68 +116,26 @@ public class WebServerThread implements Runnable {
         }
     }
 
-    private void respondWithStatus(HttpCode code, OutputStream os, URI fileUri, String sessionId) throws IOException {
+    private void respondWithStatus(HttpCode code, OutputStream os, String filePath, String sessionId) throws IOException {
         BufferedWriter bw = new BufferedWriter(new PrintWriter(os, true));
 
         // log response status
-        logger.info("WRITE LOG");
-        writeHttpStatusLogMessage(code);
+        logger.info(code.getStatus());
 
         // write response status
-        logger.info("WRITE STATUS: " + code.getStatus());
         bw.write(code.getStatus());
         bw.newLine();
 
         // write response headers
-        logger.info("WRITE HEADERS");
         writeResponseHeaders(bw, sessionId);
 
         bw.flush();
 
         // write file to response
-        logger.info("CHECK FILE");
-        if (fileUri == null) {
-            fileUri = getStatusPageFileUri(code);
+        if (filePath == null) {
+            filePath = code.getHtmlPage();
         }
-        logger.info("WRITE FILE");
-        sendFileInResponse(os, fileUri);
-    }
-
-    // TODO: move to HttpCode class?
-    private static void writeHttpStatusLogMessage(HttpCode code) throws IOException {
-        switch (code) {
-            case HTTP_200:
-                logger.info("RESPONDING");
-                break;
-            case HTTP_403:
-                logger.info("RESPONDING - Forbidden/Session expired");
-                break;
-            case HTTP_404:
-                logger.info("RESPONDING - File not found");
-                break;
-            case HTTP_503:
-                logger.info("RESPONDING - Unavailable");
-                break;
-            default:
-                logger.info("RESPONDING - UNKNOWN HTTP CODE");
-                break;
-        }
-    }
-
-    private URI getStatusPageFileUri(HttpCode code) throws IOException {
-        switch (code) {
-            case HTTP_200:
-                // file already known, should not get here
-                return toFileUri(HTML_NOT_FOUND); //TODO
-            case HTTP_403:
-                return toFileUri(HTML_FORBIDDEN);
-            case HTTP_404:
-                return toFileUri(HTML_NOT_FOUND);
-            case HTTP_503:
-                return toFileUri(HTML_UNAVAILABLE);
-            default:
-                return toFileUri(HTML_NOT_FOUND);//TODO
-        }
+        sendFileInResponse(os, filePath);
     }
 
     private void writeResponseHeaders(BufferedWriter bw, String sessionId) throws IOException {
@@ -188,12 +150,12 @@ public class WebServerThread implements Runnable {
 
         // session id header
         if (sessionId == null || isSessionExpired(sessionId)) {
-            // generate new session id and add it to sessionMap
-            // after all, set session expired false
+            // generate new session id and add it to SESSION_MAP
+            // after all, set session expired to false
             logger.info("Write cookie session header");
             sessionId = generateSessionId();
             logger.info("NEW SESSION GENERATED: " + sessionId);
-            sessionMap.put(sessionId, String.valueOf(System.currentTimeMillis()));
+            SESSION_MAP.put(sessionId, String.valueOf(System.currentTimeMillis()));
             setSessionExpired(false, sessionId);
 
             bw.write(HEADER_SET_COOKIE + COOKIE_SESSION_ID + sessionId);
@@ -203,18 +165,34 @@ public class WebServerThread implements Runnable {
         bw.newLine(); // empty line after headers
     }
 
-    private void sendFileInResponse(OutputStream os, URI fileUri) throws IOException {
-        try (BufferedInputStream is = new BufferedInputStream(new FileInputStream(new File(fileUri.getPath())))) {
-            byte bytes[] = new byte[1024]; // TODO
-            while (is.read(bytes) != -1) {
-                os.write(bytes);
+    private void sendFileInResponse(OutputStream os, String filePath) throws IOException {
+        try (BufferedInputStream is = new BufferedInputStream(new FileInputStream(new File(toFileUri(filePath).getPath())))) {
+            byte bytes[] = new byte[1024];
+            int bufSize;
+            ByteBuffer fileCache = cache.get(filePath);
+            if (fileCache != null) {
+                // already in cache, write from cache to os
+                System.out.println("is cached");
+                os.write(fileCache.array());
+            } else {
+                // not in cache, write to cache and to os
+                int fileSize = (int) new File(toFileUri(filePath).getPath()).length();
+                System.out.println("file size - " + fileSize);
+                fileCache = ByteBuffer.allocate(fileSize);
+                while ((bufSize = is.read(bytes)) != -1) {
+                    System.out.println("put bytes into filecache");
+                    fileCache.put(bytes, 0, bufSize);
+                    os.write(bytes, 0, bufSize);
+                }
+                System.out.println("put filecache into CACHE");
+                cache.put(filePath, fileCache);
             }
         } catch (FileNotFoundException e) {
-            logger.log(Level.SEVERE, "Cannot find " + fileUri.getPath(), e);
+            logger.log(Level.SEVERE, "Cannot find " + filePath, e);
         }
     }
 
-    private String getSessionIdFromCookie(String headerCookieLine) {
+    private static String getSessionIdFromCookie(String headerCookieLine) {
         int cookieSessionIdPosition = headerCookieLine.indexOf(COOKIE_SESSION_ID) + COOKIE_SESSION_ID.length();
         int cookieSessionIdEndPosition = headerCookieLine.indexOf(";", cookieSessionIdPosition);
 
@@ -231,13 +209,13 @@ public class WebServerThread implements Runnable {
 
     private void setSessionExpired(boolean sessionExpired, String sessionId) {
         if (sessionExpired) {
-            sessionMap.remove(sessionId);
+            SESSION_MAP.remove(sessionId);
         }
         this.sessionExpired = sessionExpired;
     }
 
     private boolean isSessionExpired(String sessionId) {
-        String sessionStartTimeString = sessionMap.get(sessionId);
+        String sessionStartTimeString = SESSION_MAP.get(sessionId);
         if (sessionStartTimeString != null) {
             long sessionStartTime = Long.parseLong(sessionStartTimeString);
             long currentTime = System.currentTimeMillis();
@@ -266,19 +244,25 @@ public class WebServerThread implements Runnable {
     }
 
     private enum HttpCode {
-        HTTP_200 ("HTTP/1.1 200 OK"), // TODO: const?
-        HTTP_403 ("HTTP/1.1 403 Forbidden"),
-        HTTP_404 ("HTTP/1.1 404 File not found"),
-        HTTP_503 ("HTTP/1.1 503 Service Unavailable");
+        HTTP_200("HTTP/1.1 200 OK", null), // TODO: const?
+        HTTP_403("HTTP/1.1 403 Forbidden", HTML_FORBIDDEN),
+        HTTP_404("HTTP/1.1 404 File not found", HTML_NOT_FOUND),
+        HTTP_503("HTTP/1.1 503 Service Unavailable", HTML_UNAVAILABLE);
 
         private final String status;
+        private final String htmlPage;
 
-        HttpCode(String status) {
+        HttpCode(String status, String htmlPage) {
             this.status = status;
+            this.htmlPage = htmlPage;
         }
 
         private String getStatus() {
             return status;
+        }
+
+        private String getHtmlPage() {
+            return htmlPage;
         }
     }
 }
