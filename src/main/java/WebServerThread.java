@@ -1,4 +1,5 @@
 import java.io.*;
+import java.lang.ref.SoftReference;
 import java.net.*;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
@@ -34,7 +35,7 @@ public class WebServerThread implements Runnable {
     private static final String SERVER_NAME = "noname.server.ru";
 
     private static final ConcurrentHashMap<String, String> SESSION_MAP = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<String, ByteBuffer> cache = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, SoftReference<ByteBuffer>> CACHE = new ConcurrentHashMap<>();
     private final Socket socket;
     private final ConfigurationManager configuration;
     private final String filesLocation;
@@ -156,6 +157,16 @@ public class WebServerThread implements Runnable {
             sessionId = generateSessionId();
             logger.info("NEW SESSION GENERATED: " + sessionId);
             SESSION_MAP.put(sessionId, String.valueOf(System.currentTimeMillis()));
+
+            /*//TODO: remove meeeee
+            for (Map.Entry entry : SESSION_MAP.entrySet()) {
+                System.out.println(entry.getKey() + " ===== " + entry.getValue());
+            }
+            if (SESSION_MAP.size() == 19) {
+                System.exit(-2);
+            }*/
+            System.out.println("MAP SIZE = " + SESSION_MAP.size());
+
             setSessionExpired(false, sessionId);
 
             bw.write(HEADER_SET_COOKIE + COOKIE_SESSION_ID + sessionId);
@@ -167,25 +178,29 @@ public class WebServerThread implements Runnable {
 
     private void sendFileInResponse(OutputStream os, String filePath) throws IOException {
         try (BufferedInputStream is = new BufferedInputStream(new FileInputStream(new File(toFileUri(filePath).getPath())))) {
-            byte bytes[] = new byte[1024];
+            byte bytes[] = new byte[1024 * 4];
             int bufSize;
-            ByteBuffer fileCache = cache.get(filePath);
-            if (fileCache != null) {
-                // already in cache, write from cache to os
+            SoftReference<ByteBuffer> softFileCache = CACHE.get(filePath);
+            ByteBuffer fileCache;
+            if (softFileCache != null && (fileCache = softFileCache.get()) != null) {
+                // already in cache and available in memory, write from cache to os
                 System.out.println("is cached");
                 os.write(fileCache.array());
             } else {
+                // already in cache but not available in memory
+                if (softFileCache != null) {
+                    CACHE.remove(filePath);
+                }
+
                 // not in cache, write to cache and to os
                 int fileSize = (int) new File(toFileUri(filePath).getPath()).length();
-                System.out.println("file size - " + fileSize);
                 fileCache = ByteBuffer.allocate(fileSize);
                 while ((bufSize = is.read(bytes)) != -1) {
-                    System.out.println("put bytes into filecache");
                     fileCache.put(bytes, 0, bufSize);
                     os.write(bytes, 0, bufSize);
                 }
-                System.out.println("put filecache into CACHE");
-                cache.put(filePath, fileCache);
+                System.out.println("put file into CACHE");
+                CACHE.put(filePath, new SoftReference<>(fileCache));
             }
         } catch (FileNotFoundException e) {
             logger.log(Level.SEVERE, "Cannot find " + filePath, e);

@@ -40,8 +40,10 @@ public class WebServer {
             public void run() {
                 logger.warning("Server is shutting down");
                 if (executor != null) {
+                    logger.warning("Executor is shutting down");
                     executor.shutdown();
                 }
+                logger.warning("Finally shutting down");
             }
         });
     }
