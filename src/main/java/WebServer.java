@@ -1,6 +1,5 @@
 import java.io.IOException;
 import java.net.ServerSocket;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.logging.Level;
@@ -16,8 +15,6 @@ public class WebServer {
 
     private static ExecutorService executor;
 
-    private static int COUNT = 0;
-
     public static void main(String[] args) {
         registerShutdownHook();
         listen();
@@ -30,14 +27,10 @@ public class WebServer {
         executor = Executors.newFixedThreadPool(configuration.getMaxConnectionsNumber());
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             while (!executor.isShutdown()) {
-                executor.submit(new WebServerThread(serverSocket.accept(), configuration)).get();
+                executor.execute(new WebServerThread(serverSocket.accept(), configuration));
             }
         } catch (IOException e) {
             logger.log(Level.SEVERE, "Cannot listen on port " + port, e);
-        } catch (InterruptedException e) {
-            logger.log(Level.SEVERE, "Thread was interrupted", e.getCause());
-        } catch (ExecutionException e) {
-            logger.log(Level.SEVERE, "Thread execution aborted with exception", e.getCause());
         }
     }
 
