@@ -50,7 +50,6 @@ public class WebServerThread implements Runnable {
 
     @Override
     public void run() {
-        long start = System.currentTimeMillis();
         try (BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream(), UTF_8));
              OutputStream os = socket.getOutputStream()) {
 
@@ -73,8 +72,6 @@ public class WebServerThread implements Runnable {
         } catch (IOException e) {
             logger.log(Level.SEVERE, "Error reading from or writing to the socket", e);
         }
-        long finish = System.currentTimeMillis();
-        System.out.println("THREAD TIME = " + (finish - start));
     }
 
     private static String getSessionId(BufferedReader in) throws IOException {
@@ -158,15 +155,6 @@ public class WebServerThread implements Runnable {
             logger.info("NEW SESSION GENERATED: " + sessionId);
             SESSION_MAP.put(sessionId, String.valueOf(System.currentTimeMillis()));
 
-            /*//TODO: remove meeeee
-            for (Map.Entry entry : SESSION_MAP.entrySet()) {
-                System.out.println(entry.getKey() + " ===== " + entry.getValue());
-            }
-            if (SESSION_MAP.size() == 19) {
-                System.exit(-2);
-            }*/
-            System.out.println("MAP SIZE = " + SESSION_MAP.size());
-
             setSessionExpired(false, sessionId);
 
             bw.write(HEADER_SET_COOKIE + COOKIE_SESSION_ID + sessionId);
@@ -184,7 +172,7 @@ public class WebServerThread implements Runnable {
             ByteBuffer fileCache;
             if (softFileCache != null && (fileCache = softFileCache.get()) != null) {
                 // already in cache and available in memory, write from cache to os
-                System.out.println("is cached");
+                logger.info("File is cached");
                 os.write(fileCache.array());
             } else {
                 // already in cache but not available in memory
@@ -199,7 +187,7 @@ public class WebServerThread implements Runnable {
                     fileCache.put(bytes, 0, bufSize);
                     os.write(bytes, 0, bufSize);
                 }
-                System.out.println("put file into CACHE");
+                logger.info("Put file into cache");
                 CACHE.put(filePath, new SoftReference<>(fileCache));
             }
         } catch (FileNotFoundException e) {
